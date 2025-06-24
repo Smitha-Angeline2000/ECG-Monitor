@@ -1,0 +1,12 @@
+void setup() {
+ Serial.begin(9600);
+}
+
+void loop(){
+  int ecgValue = analogRead(A0);
+  Serial.println(ecgValue);
+  delay (5); // small delay for smoother plot
+}
+
+// the reason why it didn't work was because there were no clear commands to gain the inputs from pins 10 and 11 plus the delay values were less
+// additionally, errors may occur if the electrode pads aren't attached properly with the human body
