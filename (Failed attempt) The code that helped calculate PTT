@@ -1,0 +1,97 @@
+// the code was choppy and long, plus had unnecessary add-ons
+
+
+#include <Wire.h>
+#include "MAX30105.h"
+#include "heartRate.h"
+
+MAX30105 particleSensor;
+
+const int ECG_PIN = A0;
+const int ECG_THRESHOLD = 500;
+
+const unsigned long PEAK_TIMEOUT = 1000;
+const unsigned long PTT_VALID_MIN = 120;
+const unsigned long PTT_VALID_MAX = 400;
+
+unsigned long rTime = 0;
+unsigned long pTime = 0;
+
+bool rPeakDetected = false;
+bool waitingForPulse = false;
+bool peakRising = false;
+
+long lastIR = 0;
+
+void setup() {
+  Serial.begin(115200);
+  delay(1000);
+
+  if (!particleSensor.begin(Wire, I2C_SPEED_STANDARD)) {
+    Serial.println("ERROR: MAX30102 not found.");
+    while (1);
+  }
+
+  byte ledBrightness = 60;
+  byte sampleAverage = 4;
+  byte ledMode = 2;
+  int sampleRate = 100;
+  int pulseWidth = 411;
+  int adcRange = 4096;
+
+  particleSensor.setup(ledBrightness, sampleAverage, ledMode, sampleRate, pulseWidth, adcRange);
+  particleSensor.setPulseAmplitudeRed(0x0A);
+  particleSensor.setPulseAmplitudeGreen(0);
+
+  Serial.println("PTT Measurement Started...");
+}
+
+void loop() {
+  unsigned long currentTime = millis();
+
+  // === ECG (R-Peak Detection) ===
+  int ecg = analogRead(ECG_PIN);
+  if (ecg > ECG_THRESHOLD && !rPeakDetected) {
+    rTime = currentTime;
+    rPeakDetected = true;
+    waitingForPulse = true;
+  }
+  if (ecg < ECG_THRESHOLD) {
+    rPeakDetected = false;
+  }
+
+  // === PPG (Pulse Peak Detection) ===
+  long ir = particleSensor.getIR();
+
+  if (ir > lastIR && !peakRising) {
+    peakRising = true;
+  }
+
+  if (ir < lastIR && peakRising && waitingForPulse) {
+    pTime = currentTime;
+    unsigned long ptt = pTime - rTime;
+
+    if (ptt >= PTT_VALID_MIN && ptt <= PTT_VALID_MAX) {
+      Serial.print("✅ PTT: ");
+      Serial.print(ptt);
+      Serial.println(" ms");
+    } else {
+      Serial.print("❌ Invalid PTT: ");
+      Serial.println(ptt);
+    }
+
+    waitingForPulse = false;
+    peakRising = false;
+  }
+
+  lastIR = ir;
+
+  // Expire old R-peak if no pulse detected
+  if (waitingForPulse && (currentTime - rTime > PEAK_TIMEOUT)) {
+    Serial.println("⌛ R-Peak timeout");
+    waitingForPulse = false;
+  }
+
+  delay(5);
+}
+ 
